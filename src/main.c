@@ -11,7 +11,8 @@
 #define MAX_GIT_PROJECTS 200
 #define MAX_LENGTH 40
 #define MAX_LINE_LENGTH 1000
-/*int tracked_in_commit(char* filename){
+char cwd[1024];
+int tracked_in_commit(char* filename){
     char path[1024];
     strcpy(path,current_config->repopath);
     strcat(path,"/commit/");
@@ -38,107 +39,61 @@ int isDirectory(const char *path) {
    if (stat(path, &statbuf) != 0)
        return 0;
    return S_ISDIR(statbuf.st_mode);
-}///////////////////////////////////////////////////////////////////////////
-int run_add(char* argvtmp[]){
-    //printf("ijeirj");
-    FILE* save_last=fopen(".neogit/lastadd.txt","a");
-    DIR* dir=opendir(".");
+}
+////////////////////////////////////////////////////////////////////////////
+int run_add(char* filepath,char* filename){
+    FILE* lastadd=fopen(".neogit/lastadd.txt","a");
     struct dirent* entry;
     int exists=0;
-    while((entry=readdir(dir))!=NULL){
-        if(strcmp(entry->d_name,argvtmp[2])==0){
+    char line[MAX_LINE_LENGTH];
+    char line2[MAX_LINE_LENGTH];
+    while((fgets(line,MAX_LINE_LENGTH,lastadd))!=NULL){
+        line[strlen(line)-1]='\0';
+        if(strcmp(filename,line)==0){
             exists=1;
             break;
         }
     }
-    //printf("ijeirj");
-    printf("%d",entry->d_type);
-    if(exists==0){
-            printf("this file/directory doesn't exist.\n");
-        }
-    if(exists==1 && is_regular_file(entry->d_name)){
-        if(tracked(argvtmp[2])){
-            FILE* file=fopen(argvtmp[2],"r");
-            if(file==NULL) return 1;
-            char *ABS=realpath(argvtmp[2],NULL);
-            if(ABS==NULL) return 1;
-            if(modified(ABS,argvtmp[2])){
-                char filepath[]=".neogit/stage/";
-                strcat(filepath,argvtmp[2]);
-                remove(filepath);
-                FILE* new_stagedfile=fopen(filepath,"w");
-                if(new_stagedfile==NULL) return 1;
-                char line[MAX_LINE_LENGTH];
-                while(fgets(line,MAX_LINE_LENGTH,file)!=NULL)
-                    fputs(line,new_stagedfile);
-                fprintf(save_last,"%s\n",argvtmp[2]);
-                fclose(new_stagedfile);
-                fclose(file);
-                printf("staged successfully!\n");
-                }
-        }
-        else{
-            FILE* file=fopen(argvtmp[2],"r");
-            if(file==NULL) return 1;
-            char filepath[]=".neogit/stage/";
-            strcat(filepath,argvtmp[2]);
-            FILE* stagedfile=fopen(filepath,"w");
-            if (stagedfile==NULL) return 1;
-            char line[MAX_LINE_LENGTH];
-            while(fgets(line, sizeof(line), file) != NULL)
-                fputs(line,stagedfile);
-            fprintf(save_last,"%s\n",argvtmp[2]);
-            printf("staged successfully!\n");
-            fclose(file);
-            fclose(stagedfile);
+    char path[1024]=".neogit/stage/";
+    strcat(path,filename);
+    if(exists){
+        FILE* prev=fopen(path,"r");
+        FILE* now=fopen(filepath,"r");
+        int ident=1;
+        while((fgets(line,MAX_LINE_LENGTH,prev))!=NULL || (fgets(line2,MAX_LINE_LENGTH,now))!=NULL )
+            if(strcmp(line,line2)!=0){
+                ident=0;
+                break;
             }
+        if(ident==0){
+            char tmppath[1024]=".neogit/stage/";
+            strcat(tmppath,"tmp");
+            FILE* tmp=fopen(tmppath,"w");
+            while((fgets(line,MAX_LINE_LENGTH,now))!=NULL)
+                fputs(line,tmp);
+            remove(path);
+            char new[1024]=".neogit/stage/";
+            rename(tmppath,path);
+            fclose(prev);
+            fclose(now);
+            fprintf(lastadd,"%s\n",filename);
+        }
     }
-    else if(exists==1 && entry->d_type==4){
-                DIR *dir = opendir(argvtmp[2]);
-                struct dirent *new_entry;
-                while ((new_entry = readdir(dir)) != NULL){
-                    char path[1024];
-                    strcpy(path,entry->d_name);
-                    strcat(path,"/");
-                    strcat(path,new_entry->d_name);
-                    //if(new_entry->d_type!=4) return 1;
-                    FILE* file=fopen(path,"r");
-                    if(tracked(path) && modified(path,new_entry->d_name)){
-                        char filepath[]=".neogit/stage/";
-                        strcat(filepath,new_entry->d_name);
-                        remove(filepath);
-                        FILE* new_stagedfile=fopen(filepath,"w");
-                        if(new_stagedfile==NULL) return 1;
-                        char line[MAX_LINE_LENGTH];
-                        while(fgets(line,MAX_LINE_LENGTH,file)!=NULL)
-                            fputs(line,new_stagedfile);
-                        fprintf(save_last,"%s\n",new_entry->d_name);
-                        fclose(new_stagedfile);
-                        fclose(file);
-                    }
-                    else if(tracked(path)==0){
-                        char filepath[]=".neogit/stage/";
-                        strcat(filepath,new_entry->d_name);
-                        FILE* new_stagedfile=fopen(filepath,"w");
-                        if(new_stagedfile==NULL) return 1;
-                        char line[MAX_LINE_LENGTH];
-                        while(fgets(line,MAX_LINE_LENGTH,file)!=NULL)
-                            fputs(line,new_stagedfile);
-                        fprintf(save_last,"%s\n",new_entry->d_name);
-                        fclose(new_stagedfile);
-                        fclose(file);
-                    }
-                    
-                }
-                closedir(dir);
-                fprintf(save_last,"%s\n",argvtmp[2]);
-                printf("staged successfully!");
+    else{
+        FILE* stage=fopen(path,"w");
+        FILE* to_copy=fopen(filepath,"r");
+        while((fgets(line,MAX_LINE_LENGTH,to_copy))!=NULL)
+            fputs(line,stage);
+        fclose(stage);
+        fclose(to_copy);
+        fprintf(lastadd,"%s\n",filename);
     }
-    closedir(dir);
+
+    fclose(lastadd);
 }
-int tracked(char* filename){
+/*int tracked(char* filepath){
     DIR* stagedir=opendir(".neogit/satge");
-    struct dirent* entry;
+    struct dirent* stgentry;
     while((entry=readdir(stagedir))!=NULL){
         if(strcmp(entry->d_name,filename)==0){
             closedir(stagedir);
@@ -166,13 +121,16 @@ int modified(char* filepath,char* filename){//should use realpath() to identify 
     fclose(stagedfile);
     return unidentical;
 }*/
-
-// void set_globally(config* conf , char *const argv[] , config* repo_list[]){
-    
-    // strcpy(conf->username,argv[4]);
-    // for(int i=0;i<total_repos;i++)
-    //     strcpy(repo_list[i]->username,argv[4]);
-// }
+char* get_file_name(char* filepath){
+    while(strchr(filepath,'/')!=NULL){
+        filepath=strchr(filepath,'/');
+        for(int i=1;i<strlrn(filepath);i++){
+            filepath[i-1]=filepath[i];
+        }
+        filepath[strlen(filepath)-1]='\0';
+    }
+    return filepath;
+}
 #ifdef _DEBUG_
 int main()
 {
@@ -181,9 +139,6 @@ int main()
 #else
 int main(int argc,char const *argv[]){
 #endif
-    // for(int i=0;i<argc;i++){
-    //     printf("%s\n",argv[i]);
-    // }
     char globalpath[1024]="/mnt/c/c_test/globals.txt";
     char tmpglobpath[1024]="/mnt/c/c_test/tmpglob.txt";
     char *argvtmp[10];
@@ -199,7 +154,6 @@ int main(int argc,char const *argv[]){
         invalid;
 
     //                                  //check if a repository exists?
-    char cwd[1024];
     char tmp_cwd[1024];
     if (getcwd(cwd, sizeof(cwd)) == NULL) return 1;
     int exists = 0;
@@ -288,7 +242,7 @@ int main(int argc,char const *argv[]){
                     alias[strlen(alias)-1]='\0';
                     fgets(equiv,29,config);
                     equiv[strlen(equiv)-1]='\0';
-                    if(strcmp(alias,argvtmp[2])==0){
+                    if(strcmp(alias,argvtmp[1])==0){
                         char* pch=strtok(equiv," \0\n");
                         argctmp--;
                         while(pch){
@@ -311,10 +265,11 @@ int main(int argc,char const *argv[]){
                 alias[strlen(alias)-1]='\0';
                 fgets(equiv,29,global);
                 equiv[strlen(equiv)-1]='\0';
-                if(strcmp(alias,argvtmp[2])==0){
+                if(strcmp(alias,argvtmp[1])==0){
                     char* pch=strtok(equiv," \0\n");
                     argctmp--;
                     while(pch){
+                        printf("%s\n",pch);
                         strcpy(argvtmp[argctmp++],pch);
                         pch=strtok(NULL," \0\n");
                     }
@@ -325,6 +280,7 @@ int main(int argc,char const *argv[]){
         }
     }
     fclose(global);
+    //config command:
     if(strcmp(argvtmp[1],"config")==0){
         if(strcmp(argvtmp[2],"--global")==0){
             FILE* global=fopen(globalpath,"r");
@@ -386,19 +342,140 @@ int main(int argc,char const *argv[]){
                 }
             }
         }
-        
-        for(int i=0;i<argctmp;i++){
-        printf("%s\n",argvtmp[i]);
-        }
-        // else if(strcmp(argvtmp[2],"--global")!=0){
-        //     if(argctmp!=4) invalid;
-        //     else{
-        //         FILE* local=fopen(".neogit/config.txt","r");
+        else if(strcmp(argvtmp[2],"--global")!=0){
+            if(argctmp!=4) invalid;
+            else{
+                FILE* local=fopen(".neogit/config.txt","r");
+                FILE* tmplocal=fopen(".neogit/configtmp.txt","w");
+                char line[MAX_LINE_LENGTH];
+            if(strcmp(argvtmp[2],"user.name")==0){
+                    while((fgets(line,MAX_LINE_LENGTH,global))!=NULL){
+                        if(strncmp("user.name",line,9)==0)
+                            fprintf(tmplocal,"user.name 1 %s\n",argvtmp[3]);
+                        else fputs(line,tmplocal);
+                    }
+                    remove(".neogit/config.txt");
+                    rename(".neogit/configtmp.txt",".neogit/config.txt");
+                    fclose(local);
+                    printf("set username \"%s\" for your project!\n",argvtmp[3]);
+            }
+            else if(strcmp(argvtmp[3],"user.email")==0){
+                    while((fgets(line,MAX_LINE_LENGTH,global))!=NULL){
+                        if(strncmp("user.email",line,9)==0)
+                            fprintf(tmplocal,"user.email 1 %s\n",argvtmp[3]);
+                        else fputs(line,tmplocal);
+                    }
+                    remove(".neogit/config.txt");
+                    rename(".neogit/configtmp.txt",".neogit/config.txt");
+                    fclose(local);
+                    printf("set email \"%s\" for your project!\n",argvtmp[3]);
+            }
+            else if(strncmp(argvtmp[2],"alias.",6)==0){
+                    while((fgets(line,MAX_LINE_LENGTH,global))!=NULL){
+                        if(strncmp("alias",line,5)==0){
+                            int n;
+                            sscanf(line,"alias %d",&n);
+                            fprintf(tmplocal,"alias %d\n", n+1);
+                            char* alias=calloc(20,sizeof(char));
+                            alias=strstr(argvtmp[2],".");
+                            int len=strlen(alias);
+                            for(int i=1;i<len;i++)
+                                alias[i-1]=alias[i];
+                            alias[len-1]='\0';
+                            strcat(alias,"\n");
+                            fputs(alias,tmplocal);
+                            fputs(argvtmp[3],tmplocal);
+                            fprintf(tmplocal,"\n");
+                        }
+                        else fputs(line,tmplocal);
+                    }
+                    remove(".neogit/config.txt");
+                    rename(".neogit/configtmp.txt",".neogit/config.txt");
+                    fclose(local);
+                    printf("set alias!\n");
+            }
 
-        //     }
-        // }
+            }
+        }
 
     }
+    else if(strcmp(argvtmp[1],"add")==0){
+        FILE* historyofadds=fopen(".neogit/lastadd.txt","w");
+        char filename[1024];
+        if(argctmp==3){
+            if(is_regular_file(argvtmp[2])){
+                strcpy(filename,argvtmp[2]);
+                strcpy(filename,get_file_name(filename));
+                run_add(argvtmp[2],filename);
+                printf("staged the file!\n");
+            } 
+            else{
+                struct dirent* ent;
+                DIR* dir=opendir(argvtmp[2]);
+                while((ent=readdir(dir))!=NULL){
+                strcpy(filename,argvtmp[2]);
+                strcpy(filename,get_file_name(filename));
+                run_add(argvtmp[2],filename);  
+                }
+                printf("staged the directory!\n");
+                fclose(dir);
+            }
+        }
+        else if(strcmp(argvtmp[2],"-f")==0){
+            if(argctmp<4) invalid;
+            else{
+                for(int i=3;i<argctmp;i++){
+                    if(is_regular_file(argvtmp[i])){
+                    strcpy(filename,argvtmp[i]);
+                    strcpy(filename,get_file_name(filename));
+                    run_add(argvtmp[i],filename);
+                    } 
+                    else if(isDirectory(argvtmp[i])){
+                        struct dirent* ent;
+                        DIR* dir=opendir(argvtmp[i]);
+                        while((ent=readdir(dir))!=NULL){
+                        strcpy(filename,argvtmp[i]);
+                        strcpy(filename,get_file_name(filename));
+                        run_add(argvtmp[i],filename);  
+                        }
+                        fclose(dir);
+                    }
+
+                }
+                printf("staged the files/directories successfully!\n");
+            }
+        }
+        else if(strcmp(argvtmp[2],"-n")==0 && strcmp(argvtmp[3],"1")==0){
+            char stagepath[1024]=".neogit/stage";
+            struct dirent* ent;
+            DIR* dir=opendir(".");
+            while((ent=readdir(dir))!=NULL){
+                if(ent->d_type==4 && strcmp(ent->d_name,".")!=0 && strcmp(ent->d_name,"..")!=0){
+                    int staged=1;
+                    struct dirent* new_entry;
+                    DIR* mydir=opendir(ent->d_name);
+                    int exist=0;
+                    while((new_entry=readdir(mydir))!=NULL){
+                        if()
+                    }
+                    closedir(mydir);
+                    if(staged==0)
+                        printf("%s -> status: not staged\n",ent->d_name);
+                    else if(staged==1)
+                        printf("%s -> status: staged\n",ent->d_name);
+                }
+                else if(ent->d_type==8){
+                    
+                        printf("%s -> status: staged\n",ent->d_name);
+                    else printf("%s -> status: not staged\n",ent->d_name);
+                }
+                else
+                    perror("unknow file type!\n");
+            }
+        }
+        fclose(historyofadds);
+    }
+    
     //     char cwd[1024];
     // char tmp_cwd[1024];
     // if (getcwd(cwd, sizeof(cwd)) == NULL) return 1;
@@ -433,36 +510,7 @@ int main(int argc,char const *argv[]){
     // }
 
     //>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>       CONFIG CAMMANDS BELOW       >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-    /*if(strcmp(argvtmp[1],"config")==0){                     //GLOBAL??????????
-        if(strcmp(argvtmp[2],"--global")==0){
-            if(strcmp(argvtmp[3],"user.name")==0){
-               
-            }
-            else if(strcmp(argvtmp[3],"user.email")==0){
-               
-            }
-            else if(strncmp(argvtmp[3],"alias.",6)==0){
-              
-        }                                                    //OR LOCAL??????????
-        else{
-            if(strcmp(argvtmp[2],"user.name")==0){
-                strcpy(current_config->username,argvtmp[3]);
-                printf("added your username successfully!\n");
-            }
-
-            else if(strcmp(argvtmp[2],"user.email")==0){
-                strcpy(current_config->email,argvtmp[3]);
-                printf("added your email successfully!\n");
-            }
-            else if(strncmp(argvtmp[2],"alias.",6)==0){
-                //if(valid(argvtmp[3]))                     //check for invalidity
-                strcpy(current_config->alias[current_config->total_alias],argvtmp[2]+6);
-                strcpy(current_config->alias_equiv[current_config->total_alias],argvtmp[3]);
-                current_config->total_alias++;
-                printf("added the alias command successfully!\n");
-            } 
-        }
-    }
+   /*
     if(strcmp(argvtmp[1],"add")==0){
         printf("hastam");
         if(argctmp<3){
@@ -830,7 +878,7 @@ int main(int argc,char const *argv[]){
                     }
                 }
             }
-        }*/
+        }
 }
             /*else if(strcmp(argvtmp[2],"-since")==0){
                 int n=0;
@@ -861,7 +909,7 @@ int main(int argc,char const *argv[]){
                 sscanf(argvtmp[3],"%d-%d-%d %d:%d:%d",&yearidx,&monthidx,&dayidx,&houridx,&minidx,&secidx);
                 if()
                 
-                }*/
+                }
         //}
         /*else if(strcmp(argvtmp[1],"status")==0){
             struct dirent* ent;
@@ -898,5 +946,5 @@ int main(int argc,char const *argv[]){
     
     // printf("%s\n",cwd);
     //chert();
-    return 0;*/
+    return 0;
 
